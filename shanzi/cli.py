@@ -4,7 +4,7 @@ Command-line interface for shanzi.
 Usage
 -----
     shanzi "今天天气很好"
-    shanzi --temperature 0.5 --seed 42 "上海的天空是灰色的"
+    shanzi -t 0.5 -s 42 "上海的天空是灰色的"
     shanzi decompose 晒
     shanzi neighbors 晒
 """
@@ -25,14 +25,15 @@ def _build_engine(args):
         k=args.k,
         dim=args.dim,
         embeddings_path=getattr(args, "embeddings", None),
-        quiet=args.quiet,
+        quiet=getattr(args, "quiet", False),
     )
 
 
 def cmd_transform(args):
     engine = _build_engine(args)
-    text = args.text
-    result = engine.transform(text, temperature=args.temperature, seed=args.seed)
+    result = engine.transform(
+        args.text, temperature=args.temperature, seed=args.seed,
+    )
     print(result)
 
 
@@ -60,84 +61,85 @@ def cmd_neighbors(args):
         print(f"No neighbors found for {char}")
     else:
         for ch, dist in nbrs:
-            print(f"  {ch}  (dist={dist:.4f})")
+            print(f"  {ch}  U+{ord(ch):04X}  (dist={dist:.4f})")
+
+
+def _add_global_args(parser):
+    """Add arguments shared across all subcommands."""
+    parser.add_argument(
+        "-k", type=float, default=0.67,
+        help="component attenuation factor (default: 0.67)",
+    )
+    parser.add_argument(
+        "--dim", type=int, default=300,
+        help="embedding dimensionality (default: 300)",
+    )
+    parser.add_argument(
+        "--embeddings", "-e", type=str, default=None,
+        help="path to pre-trained embedding file",
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="suppress progress messages",
+    )
 
 
 def main(argv: Optional[list] = None):
-    p = argparse.ArgumentParser(
-        prog="shanzi",
-        description="Semantic ultrasound of obscure Chinese characters.",
-    )
-    p.add_argument(
-        "-k", type=float, default=0.67,
-        help="Component attenuation factor (default: 0.67)",
-    )
-    p.add_argument(
-        "--dim", type=int, default=300,
-        help="Embedding dimensionality for structural mode (default: 300)",
-    )
-    p.add_argument(
-        "--embeddings", "-e", type=str, default=None,
-        help="Path to pre-trained embedding file (word2vec text or gensim .bin)",
-    )
-    p.add_argument(
-        "--quiet", "-q", action="store_true",
-        help="Suppress progress messages",
-    )
+    # Try subcommand-based parsing first.  If the first positional arg
+    # isn't a known subcommand, fall back to the bare transform shorthand:
+    #     shanzi "今天天气很好"
+    known_cmds = {"transform", "decompose", "neighbors"}
 
-    sub = p.add_subparsers(dest="command")
+    raw = argv if argv is not None else sys.argv[1:]
+    # Detect if any positional arg matches a known subcommand
+    has_subcmd = any(a in known_cmds for a in raw if not a.startswith("-"))
 
-    # Default: transform
-    # (also handled when no subcommand is given)
+    if has_subcmd:
+        p = argparse.ArgumentParser(
+            prog="shanzi",
+            description="Semantic ultrasound of obscure Chinese characters.",
+        )
+        _add_global_args(p)
+        sub = p.add_subparsers(dest="command")
 
-    # --- transform ---
-    sp_t = sub.add_parser("transform", help="Transform text through shanzi-space")
-    sp_t.add_argument("text", type=str, help="Input text")
-    sp_t.add_argument(
-        "-t", "--temperature", type=float, default=0.3,
-        help="Jitter magnitude (default: 0.3)",
-    )
-    sp_t.add_argument(
-        "-s", "--seed", type=int, default=None,
-        help="Random seed for reproducibility",
-    )
-    sp_t.set_defaults(func=cmd_transform)
+        sp_t = sub.add_parser("transform", help="transform text through shanzi-space")
+        sp_t.add_argument("text", type=str)
+        sp_t.add_argument("-t", "--temperature", type=float, default=0.3)
+        sp_t.add_argument("-s", "--seed", type=int, default=None)
+        sp_t.set_defaults(func=cmd_transform)
 
-    # --- decompose ---
-    sp_d = sub.add_parser("decompose", help="Show recursive decomposition of a character")
-    sp_d.add_argument("char", type=str, help="A single Chinese character")
-    sp_d.set_defaults(func=cmd_decompose)
+        sp_d = sub.add_parser("decompose", help="show character decomposition")
+        sp_d.add_argument("char", type=str)
+        sp_d.set_defaults(func=cmd_decompose)
 
-    # --- neighbors ---
-    sp_n = sub.add_parser("neighbors", help="Find nearest characters in shanzi-space")
-    sp_n.add_argument("char", type=str, help="A single Chinese character")
-    sp_n.add_argument(
-        "-n", "--count", type=int, default=10,
-        help="Number of neighbors (default: 10)",
-    )
-    sp_n.set_defaults(func=cmd_neighbors)
+        sp_n = sub.add_parser("neighbors", help="find nearest shanzi-neighbors")
+        sp_n.add_argument("char", type=str)
+        sp_n.add_argument("-n", "--count", type=int, default=10)
+        sp_n.set_defaults(func=cmd_neighbors)
 
-    args = p.parse_args(argv)
-
-    if args.command is None:
-        # No subcommand: treat remaining args as transform
-        # Re-parse with transform defaults
-        p2 = argparse.ArgumentParser(prog="shanzi")
-        p2.add_argument("-k", type=float, default=0.67)
-        p2.add_argument("--dim", type=int, default=300)
-        p2.add_argument("--embeddings", "-e", type=str, default=None)
-        p2.add_argument("--quiet", "-q", action="store_true")
-        p2.add_argument("text", nargs="?", type=str, default=None)
-        p2.add_argument("-t", "--temperature", type=float, default=0.3)
-        p2.add_argument("-s", "--seed", type=int, default=None)
-        args = p2.parse_args(argv)
+        args = p.parse_args(raw)
+        if hasattr(args, "func"):
+            args.func(args)
+        else:
+            p.print_help()
+    else:
+        # Shorthand: shanzi [-t T] [-s S] "text"
+        p = argparse.ArgumentParser(
+            prog="shanzi",
+            description="Semantic ultrasound of obscure Chinese characters.",
+        )
+        _add_global_args(p)
+        p.add_argument("text", nargs="?", type=str, default=None,
+                        help="text to transform")
+        p.add_argument("-t", "--temperature", type=float, default=0.3,
+                        help="jitter magnitude (default: 0.3)")
+        p.add_argument("-s", "--seed", type=int, default=None,
+                        help="random seed")
+        args = p.parse_args(raw)
         if args.text is None:
             p.print_help()
             sys.exit(0)
-        args.func = cmd_transform
-        args.command = "transform"
-
-    args.func(args)
+        cmd_transform(args)
 
 
 if __name__ == "__main__":

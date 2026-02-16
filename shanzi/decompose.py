@@ -28,7 +28,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 
 def _is_cjk(ch: str) -> bool:
-    """Return True if *ch* is a CJK unified ideograph or extension character."""
+    """Return True if *ch* is a CJK ideograph (including extensions and compat)."""
     cp = ord(ch)
     return (
         0x4E00 <= cp <= 0x9FFF       # CJK Unified Ideographs
@@ -43,6 +43,24 @@ def _is_cjk(ch: str) -> bool:
         or 0x2E80 <= cp <= 0x2EFF   # CJK Radicals Supplement
         or 0x2F00 <= cp <= 0x2FDF   # Kangxi Radicals
         or 0x31C0 <= cp <= 0x31EF   # CJK Strokes
+    )
+
+
+def _is_cjk_primary(ch: str) -> bool:
+    """Return True if *ch* is a CJK ideograph from the main or extension blocks.
+
+    Excludes CJK Compatibility Ideographs (which duplicate characters from
+    the main block) to avoid showing the same glyph twice in neighbor lists.
+    """
+    cp = ord(ch)
+    return (
+        0x4E00 <= cp <= 0x9FFF       # CJK Unified Ideographs
+        or 0x3400 <= cp <= 0x4DBF    # Extension A
+        or 0x20000 <= cp <= 0x2A6DF  # Extension B
+        or 0x2A700 <= cp <= 0x2B73F  # Extension C
+        or 0x2B740 <= cp <= 0x2B81F  # Extension D
+        or 0x2B820 <= cp <= 0x2CEAF  # Extension E
+        or 0x2CEB0 <= cp <= 0x2EBEF  # Extension F
     )
 
 

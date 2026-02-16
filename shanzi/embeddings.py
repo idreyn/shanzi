@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
-from shanzi.decompose import Decomposer, _is_cjk
+from shanzi.decompose import Decomposer, _is_cjk, _is_cjk_primary
 
 CACHE_DIR = Path(os.environ.get("SHANZI_CACHE", Path.home() / ".cache" / "shanzi"))
 
@@ -317,7 +317,10 @@ class ShanziEmbeddings:
         k: int = 1,
         exclude: Optional[Set[str]] = None,
     ) -> List[Tuple[str, float]]:
-        """Like nearest() but only returns CJK ideograph characters."""
+        """Like nearest() but only returns primary CJK ideograph characters.
+
+        Filters out CJK Compatibility Ideographs to avoid duplicate glyphs.
+        """
         n_query = k * 5 + 50
         n_query = min(n_query, len(self._chars))
         dists, idxs = self._tree.query(vec.astype(np.float64), k=n_query)
@@ -327,7 +330,7 @@ class ShanziEmbeddings:
         results: List[Tuple[str, float]] = []
         for d, i in zip(dists, idxs):
             ch = self._chars[int(i)]
-            if not _is_cjk(ch):
+            if not _is_cjk_primary(ch):
                 continue
             if exclude and ch in exclude:
                 continue
