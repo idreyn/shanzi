@@ -153,12 +153,12 @@ def build_model_from_corpus(
     *,
     dim: int = 96,
     window: int = 4,
-    min_count: int = 2,
-    max_vocab: int = 2000,
+    min_count: int = 1,
+    max_vocab: int = 20000,
     k: float = 0.67,
     random_seed: int = 7,
     roots: Sequence[str] | None = None,
-    include_all_characters: bool = False,
+    include_all_characters: bool = True,
 ) -> ShanziModel:
     """
     Build a full Shanzi model from corpus text and IDS decompositions.

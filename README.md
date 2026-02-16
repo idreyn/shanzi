@@ -59,8 +59,15 @@ shanzi build \
   --k 0.67
 ```
 
-By default this builds from Hanzi roots found in the corpus and recursively pulls
-all required components. Use `--all-characters` for full-table propagation.
+By default this builds for **all IDS dictionary characters**, so any dictionary
+character can be sampled/decoded even if absent from your corpus.
+
+Use `--corpus-roots` for a smaller model restricted to corpus Hanzi + recursive
+components:
+
+```bash
+shanzi build --corpus examples/corpus.txt --model-out models/small.npz --corpus-roots
+```
 
 ### 3) Remix a sentence as a semantic trajectory
 
@@ -85,7 +92,13 @@ download_ids_file(ids_path)
 decompositions = load_ids_decompositions(ids_path)
 
 corpus = Path("examples/corpus.txt").read_text(encoding="utf-8")
-model = build_model_from_corpus(corpus, decompositions, dim=64, k=0.67)
+model = build_model_from_corpus(
+    corpus,
+    decompositions,
+    dim=64,
+    k=0.67,
+    include_all_characters=True,  # default
+)
 print(remix_sentence("上海夜雨把语言洗亮", model))
 ```
 

@@ -25,6 +25,7 @@ def main() -> None:
         min_count=1,
         max_vocab=1200,
         k=0.67,
+        include_all_characters=True,
     )
 
     sentence = "上海夜雨把语言洗亮"

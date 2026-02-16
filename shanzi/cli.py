@@ -39,8 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser_.add_argument("--ids-path", type=Path, default=Path("data/ids.txt"))
     build_parser_.add_argument("--dim", type=int, default=96)
     build_parser_.add_argument("--window", type=int, default=4)
-    build_parser_.add_argument("--min-count", type=int, default=2)
-    build_parser_.add_argument("--max-vocab", type=int, default=2000)
+    build_parser_.add_argument("--min-count", type=int, default=1)
+    build_parser_.add_argument("--max-vocab", type=int, default=20000)
     build_parser_.add_argument("--k", type=float, default=0.67)
     build_parser_.add_argument("--seed", type=int, default=7)
     build_parser_.add_argument("--roots", type=str, default="", help="Optional explicit root characters.")
@@ -48,12 +48,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-roots",
         type=int,
         default=0,
-        help="Limit roots extracted from corpus (0 = all corpus Hanzi).",
+        help="Limit roots extracted from corpus (with --corpus-roots only).",
     )
-    build_parser_.add_argument(
+    mode_group = build_parser_.add_mutually_exclusive_group()
+    build_parser_.set_defaults(all_characters=True)
+    mode_group.add_argument(
         "--all-characters",
+        dest="all_characters",
         action="store_true",
-        help="Build embeddings for all characters in IDS table.",
+        help="Build embeddings for all IDS characters (default).",
+    )
+    mode_group.add_argument(
+        "--corpus-roots",
+        dest="all_characters",
+        action="store_false",
+        help="Build only for corpus-derived roots and their recursive components.",
     )
     build_parser_.set_defaults(func=cmd_build)
 
@@ -101,10 +110,12 @@ def cmd_build(args: argparse.Namespace) -> int:
     ids_path = download_ids_file(args.ids_path)
     decompositions = load_ids_decompositions(ids_path)
 
+    include_all = bool(args.all_characters)
     roots = None
     if args.roots:
         roots = list(dict.fromkeys(args.roots))
-    elif not args.all_characters:
+        include_all = False
+    elif not include_all:
         roots = unique_hanzi_in_text(corpus_text)
         if args.max_roots > 0:
             roots = roots[: args.max_roots]
@@ -119,7 +130,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         k=args.k,
         random_seed=args.seed,
         roots=roots,
-        include_all_characters=args.all_characters,
+        include_all_characters=include_all,
     )
 
     args.model_out.parent.mkdir(parents=True, exist_ok=True)
