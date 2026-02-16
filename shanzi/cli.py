@@ -5,6 +5,8 @@ Usage
 -----
     shanzi "今天天气很好"
     shanzi -t 0.5 -s 42 "上海的天空是灰色的"
+    shanzi -a "意识正在分崩离析"
+    shanzi --mode spline "今天天气很好"
     shanzi decompose 晒
     shanzi neighbors 晒
     echo "一段文字" | shanzi --stdin
@@ -40,25 +42,63 @@ def cmd_transform(args):
     else:
         text = args.text
 
-    result = engine.transform(
-        text, temperature=args.temperature, seed=args.seed,
-    )
+    mode = getattr(args, "mode", "beam")
 
-    if getattr(args, "annotate", False):
-        # Show input → output character mapping
-        print(f"  in:  {text}")
-        print(f"  out: {result}")
-        print()
-        for i, (orig, out) in enumerate(zip(text, result)):
-            if orig == out or not _is_cjk(orig):
-                continue
-            orig_parts = engine.decomposer.get(orig)
-            out_parts = engine.decomposer.get(out)
-            orig_info = f"[{''.join(orig_parts)}]" if orig_parts else ""
-            out_info = f"[{''.join(out_parts)}]" if out_parts else ""
-            print(f"  {orig}{orig_info} → {out}{out_info}")
+    if getattr(args, "explain", False):
+        info = engine.explain(text, temperature=args.temperature, seed=args.seed)
+        _print_explain(info, engine)
+    elif getattr(args, "annotate", False):
+        result = engine.transform(
+            text, temperature=args.temperature, seed=args.seed, mode=mode,
+        )
+        _print_annotated(text, result, engine)
     else:
+        result = engine.transform(
+            text, temperature=args.temperature, seed=args.seed, mode=mode,
+        )
         print(result)
+
+
+def _print_annotated(text, result, engine):
+    """Show input/output with per-character decomposition."""
+    print(f"  in:  {text}")
+    print(f"  out: {result}")
+    print()
+    for orig, out in zip(text, result):
+        if orig == out or not _is_cjk(orig):
+            continue
+        orig_parts = engine.decomposer.get(orig)
+        out_parts = engine.decomposer.get(out)
+        orig_info = f"[{''.join(orig_parts)}]" if orig_parts else ""
+        out_info = f"[{''.join(out_parts)}]" if out_parts else ""
+        print(f"  {orig}{orig_info} → {out}{out_info}")
+
+
+def _print_explain(info, engine):
+    """Pretty-print the explain() diagnostic."""
+    print(f"  in:  {info['input']}")
+    print(f"  out: {info['output']}")
+    print()
+
+    if info["motifs"]:
+        print("  motifs:")
+        for m in info["motifs"]:
+            r = m["radical"]
+            parts = engine.decomposer.get(r)
+            parts_str = f" [{''.join(parts)}]" if parts else ""
+            print(f"    {r}{parts_str}  period={m['period']:.1f}  phase={m['phase']:.1f}")
+        print()
+
+    print("  pos  in → out   resonance         motifs")
+    print("  " + "─" * 55)
+    for c in info["chars"]:
+        res = "".join(c["resonance_with_prev"][:5]) or "·"
+        mot = "".join(c["active_motifs"][:3]) or "·"
+        shared = "".join(c["shared_with_input"][:4]) or "·"
+        print(
+            f"  {c['pos']:3d}  {c['input']} → {c['output']}   "
+            f"←prev: {res:6s}  motifs: {mot:5s}  shared: {shared}"
+        )
 
 
 def cmd_decompose(args):
@@ -113,8 +153,8 @@ def _add_global_args(parser):
 def _add_transform_args(parser):
     """Add arguments specific to the transform command."""
     parser.add_argument(
-        "-t", "--temperature", type=float, default=0.3,
-        help="jitter magnitude (default: 0.3)",
+        "-t", "--temperature", type=float, default=0.5,
+        help="jitter magnitude — 0 = close to input, 1+ = deep shanzi (default: 0.5)",
     )
     parser.add_argument(
         "-s", "--seed", type=int, default=None,
@@ -122,7 +162,15 @@ def _add_transform_args(parser):
     )
     parser.add_argument(
         "-a", "--annotate", action="store_true",
-        help="show input→output character mapping with decomposition",
+        help="show input→output mapping with decomposition",
+    )
+    parser.add_argument(
+        "-x", "--explain", action="store_true",
+        help="show full diagnostic: motifs, schedules, resonance per character",
+    )
+    parser.add_argument(
+        "--mode", choices=["beam", "spline"], default="beam",
+        help="generation mode: beam (multi-channel, default) or spline (v1 drift)",
     )
     parser.add_argument(
         "--stdin", action="store_true",

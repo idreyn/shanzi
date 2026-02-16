@@ -178,6 +178,20 @@ class Decomposer:
                         queue.append(p)
         return tree
 
+    def all_components(self, char: str) -> Set[str]:
+        """Every sub-component of *char* at every depth (flat set)."""
+        result: Set[str] = set()
+        stack = [char]
+        seen = {char}
+        while stack:
+            ch = stack.pop()
+            for part in self.components.get(ch, []):
+                result.add(part)
+                if part not in seen:
+                    seen.add(part)
+                    stack.append(part)
+        return result
+
     def all_chars(self) -> Set[str]:
         """Every character mentioned in the decomposition graph."""
         s: Set[str] = set(self.components.keys())

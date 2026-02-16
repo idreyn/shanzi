@@ -1,5 +1,5 @@
 """
-ShanziEngine — the top-level façade that wires everything together.
+ShanziEngine — the top-level facade that wires everything together.
 
     from shanzi import ShanziEngine
 
@@ -20,6 +20,7 @@ from shanzi.embeddings import (
     StructuralSource,
     TextFileSource,
 )
+from shanzi.generate import ShanziGenerator
 from shanzi.transform import ShanziTransformer
 
 
@@ -35,8 +36,8 @@ class ShanziEngine:
         (ignored if *embeddings_path* supplies vectors of a different size).
     embeddings_path : str, optional
         Path to a pre-trained embedding file.  Recognised formats:
-        • word2vec text format (first line: ``N DIM``)
-        • gensim binary (``.bin``) — requires ``pip install gensim``
+        * word2vec text format (first line: ``N DIM``)
+        * gensim binary (``.bin``) — requires ``pip install gensim``
     ids_path : str, optional
         Override path to the IDS decomposition file.
     quiet : bool
@@ -65,19 +66,54 @@ class ShanziEngine:
             self.decomposer, source=source, k=k, dim=dim,
             quiet=quiet, cache=cache,
         )
-        self.transformer = ShanziTransformer(self.embeddings)
+        self.generator = ShanziGenerator(
+            self.embeddings, self.decomposer, quiet=quiet,
+        )
+        # Keep the spline transformer as an alternative mode
+        self._spline = ShanziTransformer(self.embeddings)
 
     def transform(
         self,
         text: str,
-        temperature: float = 0.3,
+        temperature: float = 0.5,
         seed: Optional[int] = None,
+        mode: str = "beam",
     ) -> str:
         """Transform *text* through shanzi-space.
 
-        See :meth:`ShanziTransformer.transform` for parameter details.
+        Parameters
+        ----------
+        text : str
+        temperature : float
+            0 = stay close to input, 1+ = deep shanzi.
+        seed : int, optional
+        mode : str
+            ``"beam"`` (default) — multi-channel beam search with radical
+            resonance and motif scheduling.
+            ``"spline"`` — original B-spline jitter through embedding space.
         """
-        return self.transformer.transform(text, temperature=temperature, seed=seed)
+        if mode == "spline":
+            return self._spline.transform(
+                text, temperature=temperature, seed=seed,
+            )
+        return self.generator.generate(
+            text, temperature=temperature, seed=seed,
+        )
+
+    def explain(
+        self,
+        text: str,
+        temperature: float = 0.5,
+        seed: Optional[int] = None,
+    ) -> dict:
+        """Transform with full diagnostic output.
+
+        Returns a dict with the output text, selected motifs, their
+        polyrhythmic schedules, and per-character resonance info.
+        """
+        return self.generator.explain(
+            text, temperature=temperature, seed=seed,
+        )
 
     def decompose(self, char: str):
         """Show the recursive decomposition tree for a single character."""

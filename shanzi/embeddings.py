@@ -150,6 +150,7 @@ class ShanziEmbeddings:
 
         self._shanzi: Dict[str, np.ndarray] = {}
         self._chars: List[str] = []
+        self._vocab_set: Set[str] = set()
         self._matrix: Optional[np.ndarray] = None
         self._tree: Optional[cKDTree] = None
 
@@ -182,6 +183,7 @@ class ShanziEmbeddings:
         try:
             data = np.load(cp, allow_pickle=True)
             self._chars = list(data["chars"])
+            self._vocab_set = set(self._chars)
             # Stored as float16 for compactness; promote back to float32
             self._matrix = data["matrix"].astype(np.float32)
             # Re-normalise after float16 round-trip
@@ -265,6 +267,7 @@ class ShanziEmbeddings:
 
         # Build nearest-neighbour index
         self._chars = list(self._shanzi.keys())
+        self._vocab_set = set(self._chars)
         self._matrix = np.vstack([self._shanzi[c] for c in self._chars])
         self._tree = cKDTree(self._matrix)
 
@@ -280,7 +283,7 @@ class ShanziEmbeddings:
 
     @property
     def vocab(self) -> Set[str]:
-        return set(self._chars)
+        return self._vocab_set
 
     def get(self, char: str) -> Optional[np.ndarray]:
         return self._shanzi.get(char)
