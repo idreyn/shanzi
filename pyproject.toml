@@ -25,3 +25,7 @@ include = ["shanzi*"]
 
 [tool.setuptools.package-data]
 shanzi = ["data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

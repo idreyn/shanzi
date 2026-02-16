@@ -7,6 +7,7 @@ Usage
     shanzi -t 0.5 -s 42 "上海的天空是灰色的"
     shanzi decompose 晒
     shanzi neighbors 晒
+    echo "一段文字" | shanzi --stdin
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ import argparse
 import json
 import sys
 from typing import Optional
+
+from shanzi.decompose import _is_cjk
 
 
 def _build_engine(args):
@@ -31,10 +34,31 @@ def _build_engine(args):
 
 def cmd_transform(args):
     engine = _build_engine(args)
+
+    if getattr(args, "stdin", False):
+        text = sys.stdin.read().strip()
+    else:
+        text = args.text
+
     result = engine.transform(
-        args.text, temperature=args.temperature, seed=args.seed,
+        text, temperature=args.temperature, seed=args.seed,
     )
-    print(result)
+
+    if getattr(args, "annotate", False):
+        # Show input → output character mapping
+        print(f"  in:  {text}")
+        print(f"  out: {result}")
+        print()
+        for i, (orig, out) in enumerate(zip(text, result)):
+            if orig == out or not _is_cjk(orig):
+                continue
+            orig_parts = engine.decomposer.get(orig)
+            out_parts = engine.decomposer.get(out)
+            orig_info = f"[{''.join(orig_parts)}]" if orig_parts else ""
+            out_info = f"[{''.join(out_parts)}]" if out_parts else ""
+            print(f"  {orig}{orig_info} → {out}{out_info}")
+    else:
+        print(result)
 
 
 def cmd_decompose(args):
@@ -61,7 +85,9 @@ def cmd_neighbors(args):
         print(f"No neighbors found for {char}")
     else:
         for ch, dist in nbrs:
-            print(f"  {ch}  U+{ord(ch):04X}  (dist={dist:.4f})")
+            parts = engine.decomposer.get(ch)
+            parts_str = f" [{''.join(parts)}]" if parts else ""
+            print(f"  {ch}  U+{ord(ch):04X}{parts_str}  (dist={dist:.4f})")
 
 
 def _add_global_args(parser):
@@ -84,14 +110,29 @@ def _add_global_args(parser):
     )
 
 
-def main(argv: Optional[list] = None):
-    # Try subcommand-based parsing first.  If the first positional arg
-    # isn't a known subcommand, fall back to the bare transform shorthand:
-    #     shanzi "今天天气很好"
-    known_cmds = {"transform", "decompose", "neighbors"}
+def _add_transform_args(parser):
+    """Add arguments specific to the transform command."""
+    parser.add_argument(
+        "-t", "--temperature", type=float, default=0.3,
+        help="jitter magnitude (default: 0.3)",
+    )
+    parser.add_argument(
+        "-s", "--seed", type=int, default=None,
+        help="random seed for reproducibility",
+    )
+    parser.add_argument(
+        "-a", "--annotate", action="store_true",
+        help="show input→output character mapping with decomposition",
+    )
+    parser.add_argument(
+        "--stdin", action="store_true",
+        help="read input from stdin instead of argument",
+    )
 
+
+def main(argv: Optional[list] = None):
+    known_cmds = {"transform", "decompose", "neighbors"}
     raw = argv if argv is not None else sys.argv[1:]
-    # Detect if any positional arg matches a known subcommand
     has_subcmd = any(a in known_cmds for a in raw if not a.startswith("-"))
 
     if has_subcmd:
@@ -103,9 +144,8 @@ def main(argv: Optional[list] = None):
         sub = p.add_subparsers(dest="command")
 
         sp_t = sub.add_parser("transform", help="transform text through shanzi-space")
-        sp_t.add_argument("text", type=str)
-        sp_t.add_argument("-t", "--temperature", type=float, default=0.3)
-        sp_t.add_argument("-s", "--seed", type=int, default=None)
+        sp_t.add_argument("text", nargs="?", type=str, default=None)
+        _add_transform_args(sp_t)
         sp_t.set_defaults(func=cmd_transform)
 
         sp_d = sub.add_parser("decompose", help="show character decomposition")
@@ -131,12 +171,9 @@ def main(argv: Optional[list] = None):
         _add_global_args(p)
         p.add_argument("text", nargs="?", type=str, default=None,
                         help="text to transform")
-        p.add_argument("-t", "--temperature", type=float, default=0.3,
-                        help="jitter magnitude (default: 0.3)")
-        p.add_argument("-s", "--seed", type=int, default=None,
-                        help="random seed")
+        _add_transform_args(p)
         args = p.parse_args(raw)
-        if args.text is None:
+        if args.text is None and not args.stdin:
             p.print_help()
             sys.exit(0)
         cmd_transform(args)
