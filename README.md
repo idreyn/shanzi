@@ -19,28 +19,28 @@ there.  They're just not doing anything.
 
 Each character is made of radicals and sub-components that carry wisps of
 meaning.  Shanzi builds *recursive embeddings* that smear each
-character's semantics through the full tree of its parts, then treats a
-sentence as a **path through that semantic space** — curve-fits it, jitters
-it, resamples it — and decodes back to characters that are nearby but
-*structurally alien*.  The output is the written equivalent of a
-tryptamine-pen hallucination: almost legible, semantically adjacent, and
-deeply strange.
+character's semantics through the full tree of its parts, then uses
+**multi-channel beam search** to produce output where adjacent characters
+share visible radicals — structural "chords" — while selected radical
+motifs recur at polyrhythmic intervals, threading leitmotifs through the
+text at different time signatures.
+
+The output is the written equivalent of a tryptamine-pen hallucination:
+semantically adjacent, structurally resonant, and deeply strange.
 
 ## Quick start
 
 ```bash
 pip install -e .
-shanzi transform "今天天气很好"
+shanzi "今天天气很好"
 ```
 
 First run computes embeddings for ~89,000 characters (~12 seconds).
-Subsequent runs load from cache (~1 second).
+Subsequent runs load from cache (~2 seconds).
 
 ## What it does
 
 ### 1. Decompose characters into sub-components
-
-晒 → [日, 西] → 日 is atomic; 西 → [一, 𠁤] → ...
 
 ```bash
 shanzi decompose 晒
@@ -56,54 +56,74 @@ shanzi decompose 晒
 ```
 
 Uses the [CHISE/cjkvi-ids](https://github.com/cjkvi/cjkvi-ids)
-Ideographic Description Sequence database (bundled).
+Ideographic Description Sequence database (bundled, ~89K characters).
 
 ### 2. Build shanzi embeddings
 
-Topologically sort characters so each comes after its parts, then:
+Topologically sort characters leaves-first, then:
 
 ```
 S(h) = normalise( W2V(h) + k · Σ S(part) )
 ```
 
-where `k = 0.67` (configurable).  The base embedding `W2V(h)` is either
-a pre-trained word2vec model (if you supply one) or a deterministic
-structural vector seeded by Unicode codepoint.  The structural mode
-needs no external data and already produces meaningful geometry: 木 (tree)
-clusters near 林 (grove = tree+tree) and 森 (forest = tree+tree+tree).
+where `k = 0.67`.  The base embedding is either a pre-trained word2vec
+model (if you supply one) or a deterministic structural vector seeded by
+Unicode codepoint.  The structural mode needs no external data and
+already produces meaningful geometry: 木 (tree) clusters near 林
+(grove = tree+tree) and 森 (forest = tree×3).
 
 ```bash
 shanzi neighbors 木
 ```
 
-```
-  林  (dist=0.8523)
-  森  (dist=0.9114)
-  ...
-```
+### 3. Generate shanzi via multi-channel beam search
 
-### 3. Transform sentences through shanzi-space
+Three channels carry meaning simultaneously:
 
-A sentence is a discretised signal through embedding space.  We:
-
-1. Map each character to its shanzi embedding
-2. Fit a **B-spline** through the sequence
-3. Add **smooth random perturbation** (controlled by temperature)
-4. Resample at the original time-points
-5. Decode each sample to its **nearest character** in shanzi-space
+- **Semantic (melody):** shanzi embeddings preserve the input's meaning
+- **Resonance (harmony):** adjacent characters share visible radicals,
+  creating structural chords
+- **Motif (bass line):** selected radicals recur at polyrhythmic intervals
 
 ```bash
-shanzi transform -t 0.3 -s 42 "上海的天空是灰色的"
+shanzi -x -s 42 "意识正在分崩离析"
 ```
 
-The `--temperature` (`-t`) flag controls how far the output drifts from
-the input.  Low temperatures stay close; high temperatures wander into
-the deep stacks of CJK Extension B/C/D/E/F.
+```
+  in:  意识正在分崩离析
+  out: 𩍖谙𥪃𫞼𨐳𭤯謧𬄀
+
+  motifs:
+    一  period=2.0  phase=...
+    亠  period=3.0  phase=...
+    丶  period=5.0  phase=...
+
+  pos  in → out   resonance         motifs
+  ───────────────────────────────────────────────────────
+    0  意 → 𩍖   ←prev: ·       motifs: ·
+    1  识 → 谙   ←prev: 一丶丷亠    motifs: 一
+    2  正 → 𥪃   ←prev: 一丶丷亠    motifs: ·
+    3  在 → 𫞼   ←prev: 一丶丷亠    motifs: 一
+    4  分 → 𨐳   ←prev: 一丶丷亠    motifs: 丶
+    5  崩 → 𭤯   ←prev: 一丶丿亠    motifs: 一
+    6  离 → 謧   ←prev: 一丶亠     motifs: ·
+    7  析 → 𬄀   ←prev: 一丶      motifs: 一
+```
+
+Notice the resonance column: a thread of shared radicals (一, 丶, 丷, 亠)
+runs through six consecutive characters.  The motif 一 pulses at period 2.
+
+The `--temperature` (`-t`) flag controls how the channels balance:
+
+- **Low temperature** → semantics dominate, output stays close to input
+- **High temperature** → structural channels take over, meaning dissolves
+  into radical echoes — the deep shanzi experience
 
 ## CLI reference
 
 ```
-shanzi [options] transform [-t TEMP] [-s SEED] TEXT
+shanzi [options] "text"
+shanzi [options] transform [-t TEMP] [-s SEED] [--mode beam|spline] TEXT
 shanzi [options] decompose CHAR
 shanzi [options] neighbors [-n COUNT] CHAR
 ```
@@ -121,8 +141,12 @@ shanzi [options] neighbors [-n COUNT] CHAR
 
 | Flag | Default | Description |
 |---|---|---|
-| `-t`, `--temperature` | `0.3` | Jitter magnitude (0 = identity) |
+| `-t`, `--temperature` | `0.5` | 0 = close to input, 1+ = deep shanzi |
 | `-s`, `--seed` | random | Random seed for reproducibility |
+| `-a`, `--annotate` | off | Show input→output mapping with decomposition |
+| `-x`, `--explain` | off | Full diagnostic: motifs, schedules, resonance |
+| `--mode` | `beam` | `beam` (multi-channel) or `spline` (v1 drift) |
+| `--stdin` | off | Read from stdin |
 
 ## Python API
 
@@ -131,16 +155,19 @@ from shanzi import ShanziEngine
 
 engine = ShanziEngine(k=0.67, dim=300)
 
-# Transform text
-output = engine.transform("今天天气很好", temperature=0.3, seed=42)
+# Transform text (beam search, default)
+output = engine.transform("今天天气很好", temperature=0.5, seed=42)
 
-# Decompose a character
+# Transform with full diagnostic
+info = engine.explain("今天天气很好", temperature=0.5, seed=42)
+# info["output"], info["motifs"], info["chars"][i]["resonance_with_prev"]
+
+# Spline mode (v1)
+output = engine.transform("今天天气很好", mode="spline", seed=42)
+
+# Decompose, neighbors, embedding
 tree = engine.decompose("晒")
-
-# Find semantic neighbors
 neighbors = engine.neighbors("晒", k=10)
-
-# Get the raw shanzi embedding vector
 vec = engine.embedding("晒")
 ```
 
@@ -150,56 +177,39 @@ The structural fallback works out of the box, but you get richer
 semantics by plugging in real Chinese character embeddings:
 
 ```python
-# word2vec text format
 engine = ShanziEngine(embeddings_path="chinese_char_vectors.txt")
-
-# gensim binary (requires: pip install gensim)
-engine = ShanziEngine(embeddings_path="chinese_vectors.bin")
+engine = ShanziEngine(embeddings_path="chinese_vectors.bin")  # needs gensim
 ```
 
-Any word2vec-format file with single-character entries will work.
-Characters missing from the external model fall back to structural
-embeddings automatically.
+## How it works
 
-## Caching
+See [THEORY.md](THEORY.md) for the full derivation.  Summary:
 
-Computed embeddings are cached to `~/.cache/shanzi/` (~47 MB).
-Override with `SHANZI_CACHE=/path/to/dir`.  Delete the cache to
-force recomputation.
+**Shanzi embeddings.** Each character's embedding blends its own base
+vector with attenuated copies of its components' embeddings, recursively.
+This creates a space where characters sharing structural parts cluster
+together.
 
-## How it works, in more detail
-
-**Decomposition.**  The IDS (Ideographic Description Sequences) database
-encodes how characters are built from sub-components.  Twelve structural
-operators describe spatial relationships (left-right, top-bottom, surround,
-etc.).  We parse the tree, extract the component characters, and build a
-dependency graph.
-
-**Topological sort.**  Characters are ordered so that every component
-appears before any character that uses it.  This lets us compute shanzi
-embeddings in a single forward pass.
-
-**Shanzi formula.**  For character *h* with components *p₁, p₂, ...*:
+**Multi-channel beam search.** For each position in the output, we
+gather ~300 candidate characters from the embedding space and the radical
+inverted index.  Each candidate is scored by:
 
 ```
-S(h) = normalise( W2V(h)  +  k · [ S(p₁) + S(p₂) + ... ] )
+score = w_sem · cos_sim(S(candidate), S(input))    // semantic fidelity
+      + w_res · jaccard(components, prev_components) // radical resonance
+      + w_mot · Σ schedule_weight · [motif ∈ components]  // motif presence
+      + gumbel_noise · temperature                   // diversity
 ```
 
-The attenuation factor *k* controls how much component meaning bleeds
-into the character's own embedding.  At k=0, every character stands
-alone.  As k grows, characters dissolve into the meanings of their parts.
+Temperature modulates the balance: low T → semantics dominate; high T →
+structural channels take over and meaning dissolves into radical echoes.
 
-**Curve fitting.**  A sentence of *n* characters becomes *n* points in
-ℝ^300.  A B-spline of degree min(3, n-1) interpolates through them,
-giving a smooth continuous path.
-
-**Jitter.**  A second, lower-frequency B-spline (fewer control points)
-generates smooth random perturbation, scaled by the temperature
-parameter.  This is added to the main curve.
-
-**Resampling.**  The perturbed curve is evaluated at the original
-time-points.  Each resulting vector is decoded to its nearest CJK
-character in shanzi-space via a KD-tree index.
+**Motif scheduling.** Before generation, 2–4 radical motifs are
+selected from the input text's component palette and assigned
+polyrhythmic periods (2, 3, 5, 7, ...) with random phases.  The result:
+motif radicals pulse through the output at different frequencies,
+creating complex interference patterns — leitmotifs drifting along at
+different time signatures.
 
 ## Requirements
 
@@ -207,6 +217,12 @@ character in shanzi-space via a KD-tree index.
 - numpy ≥ 1.24
 - scipy ≥ 1.10
 - (optional) gensim ≥ 4.0 for loading pre-trained embeddings
+
+## Caching
+
+Computed embeddings are cached to `~/.cache/shanzi/` (~47 MB).
+Override with `SHANZI_CACHE=/path/to/dir`.  Delete the cache to
+force recomputation.
 
 ## License
 
@@ -217,4 +233,4 @@ MIT
 - Character decomposition data from [cjkvi-ids](https://github.com/cjkvi/cjkvi-ids),
   based on the [CHISE](https://www.chise.org/) IDS Database
 - The concept of shanzi is from [*Upon the Mirror Sea*](https://www.royalroad.com/fiction/44188/upon-the-mirror-sea)
-  by a]pod[
+  by a\]pod\[
